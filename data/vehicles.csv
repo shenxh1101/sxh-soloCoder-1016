@@ -1,0 +1,9 @@
+plate_number,vehicle_type,max_weight,max_volume,inspection_date,fuel_consumption,status
+京A12345,4.2米厢货,8.0,25.0,2026-12-15,25.0,available
+京A23456,6.8米厢货,12.0,40.0,2026-08-20,28.0,available
+京A34567,9.6米厢货,18.0,60.0,2026-06-15,32.0,available
+京B67890,4.2米厢货,8.0,25.0,2026-06-25,26.0,available
+京B78901,6.8米厢货,12.0,40.0,2026-11-30,27.5,available
+沪C12345,4.2米厢货,8.0,25.0,2026-09-10,25.5,available
+沪C23456,6.8米厢货,12.0,40.0,2026-06-05,28.5,available
+粤D12345,9.6米厢货,18.0,60.0,2026-07-20,31.0,available

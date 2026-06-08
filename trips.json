@@ -1,0 +1,68 @@
+[
+  {
+    "trip_id": "T0001",
+    "vehicle_plate": "京A12345",
+    "driver_id": "D001",
+    "origin": "上海",
+    "destination": "南京",
+    "orders": [
+      "O0006"
+    ],
+    "total_weight": 3.5,
+    "total_volume": 7.0,
+    "estimated_distance": 300.0,
+    "estimated_hours": 5.0,
+    "estimated_fuel_cost": 562.5,
+    "estimated_toll_cost": 240.0,
+    "departure_time": "2026-06-08 08:00:00",
+    "arrival_time": null,
+    "status": "delayed",
+    "delay_minutes": 45,
+    "reassigned": false,
+    "notes": "晚点45分钟，原因: G42高速交通事故拥堵，时间: 2026-06-08 09:37:48"
+  },
+  {
+    "trip_id": "T0002",
+    "vehicle_plate": "京B67890",
+    "driver_id": "D004",
+    "origin": "上海",
+    "destination": "杭州",
+    "orders": [
+      "O0005"
+    ],
+    "total_weight": 6.0,
+    "total_volume": 15.0,
+    "estimated_distance": 180.0,
+    "estimated_hours": 3.0,
+    "estimated_fuel_cost": 378.0,
+    "estimated_toll_cost": 144.0,
+    "departure_time": "2026-06-08 08:00:00",
+    "arrival_time": null,
+    "status": "planned",
+    "delay_minutes": 0,
+    "reassigned": true,
+    "notes": "改派原因: 原车辆临时故障需要维修; 车辆: 京A23456 -> 京B67890; 司机: D002 -> D004; 时间: 2026-06-08 09:38:00"
+  },
+  {
+    "trip_id": "T0003",
+    "vehicle_plate": "京A34567",
+    "driver_id": "D003",
+    "origin": "广州",
+    "destination": "深圳",
+    "orders": [
+      "O0011"
+    ],
+    "total_weight": 2.5,
+    "total_volume": 5.5,
+    "estimated_distance": 150.0,
+    "estimated_hours": 2.5,
+    "estimated_fuel_cost": 360.0,
+    "estimated_toll_cost": 120.0,
+    "departure_time": "2026-06-08 08:00:00",
+    "arrival_time": null,
+    "status": "planned",
+    "delay_minutes": 0,
+    "reassigned": false,
+    "notes": ""
+  }
+]

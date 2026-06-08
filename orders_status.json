@@ -1,0 +1,62 @@
+[
+  {
+    "order_id": "O0001",
+    "status": "pending",
+    "assigned_trip": null
+  },
+  {
+    "order_id": "O0002",
+    "status": "pending",
+    "assigned_trip": null
+  },
+  {
+    "order_id": "O0003",
+    "status": "pending",
+    "assigned_trip": null
+  },
+  {
+    "order_id": "O0004",
+    "status": "pending",
+    "assigned_trip": null
+  },
+  {
+    "order_id": "O0005",
+    "status": "assigned",
+    "assigned_trip": "T0002"
+  },
+  {
+    "order_id": "O0006",
+    "status": "assigned",
+    "assigned_trip": "T0001"
+  },
+  {
+    "order_id": "O0007",
+    "status": "pending",
+    "assigned_trip": null
+  },
+  {
+    "order_id": "O0008",
+    "status": "pending",
+    "assigned_trip": null
+  },
+  {
+    "order_id": "O0009",
+    "status": "pending",
+    "assigned_trip": null
+  },
+  {
+    "order_id": "O0010",
+    "status": "pending",
+    "assigned_trip": null
+  },
+  {
+    "order_id": "O0011",
+    "status": "assigned",
+    "assigned_trip": "T0003"
+  },
+  {
+    "order_id": "O0012",
+    "status": "pending",
+    "assigned_trip": null
+  }
+]
