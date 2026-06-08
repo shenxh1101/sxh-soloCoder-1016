@@ -298,13 +298,26 @@ def generate_daily_report(
     orders_status_file = os.path.join(output_dir, "orders_status.json")
     orders = load_orders_status(orders_status_file, orders)
     
-    today_trips = [t for t in trips if t.departure_time and t.departure_time.date() == report_date]
+    today_trips = [
+        t for t in trips 
+        if (t.departure_time and t.departure_time.date() == report_date)
+        or (t.status == "planned" and t.departure_time and t.departure_time.date() == report_date)
+    ]
     
     report = DailyReport(report_date=report_date)
     report.total_trips = len(today_trips)
-    report.completed_trips = len([t for t in today_trips if t.status == "completed"])
-    report.delayed_trips = len([t for t in today_trips if t.delay_minutes > 0])
-    report.reassigned_trips = len([t for t in today_trips if t.reassigned])
+    
+    completed_trips = [t for t in today_trips if t.status == "completed"]
+    in_progress_trips = [t for t in today_trips if t.status == "in_progress"]
+    planned_trips = [t for t in today_trips if t.status in ["planned", "delayed"] and t.status != "in_progress" and t.status != "completed"]
+    delayed_trips = [t for t in today_trips if t.delay_minutes > 0]
+    reassigned_trips = [t for t in today_trips if t.reassigned]
+    
+    report.completed_trips = len(completed_trips)
+    report.delayed_trips = len(delayed_trips)
+    report.reassigned_trips = len(reassigned_trips)
+    report.in_progress_trips = len(in_progress_trips)
+    report.planned_trips = len(planned_trips)
     
     total_orders = 0
     total_cost = 0.0
@@ -317,7 +330,7 @@ def generate_daily_report(
     
     report.total_orders = total_orders
     report.total_cost = total_cost
-    report.total_revenue = total_cost * 1.5
+    report.total_revenue = total_cost * 1.5 if total_cost > 0 else 0.0
     
     _, anomalies = generate_anomaly_list(vehicles_file, drivers_file, orders_file, output_dir, report_date)
     report.anomalies = [f"{a['type']}: {a['detail']}" for a in anomalies]
@@ -333,8 +346,8 @@ def generate_daily_report(
     report_lines.append("【运营概览】")
     report_lines.append(f"  总班次: {report.total_trips}")
     report_lines.append(f"  已完成: {report.completed_trips}")
-    report_lines.append(f"  运输中: {len([t for t in today_trips if t.status == 'in_progress'])}")
-    report_lines.append(f"  待出发: {len([t for t in today_trips if t.status == 'planned'])}")
+    report_lines.append(f"  运输中: {report.in_progress_trips}")
+    report_lines.append(f"  待出发: {report.planned_trips}")
     report_lines.append(f"  晚点班次: {report.delayed_trips}")
     report_lines.append(f"  临时改派: {report.reassigned_trips}")
     report_lines.append(f"  配送订单: {report.total_orders} 个")
@@ -349,10 +362,17 @@ def generate_daily_report(
     report_lines.append("")
     
     report_lines.append("【财务概览】")
-    report_lines.append(f"  预估总收入: ¥{report.total_revenue:.2f}")
-    report_lines.append(f"  预估总成本: ¥{report.total_cost:.2f}")
-    report_lines.append(f"  预估利润: ¥{report.total_revenue - report.total_cost:.2f}")
-    report_lines.append(f"  利润率: {(report.total_revenue - report.total_cost) / report.total_revenue * 100:.1f}%")
+    if report.total_trips > 0:
+        report_lines.append(f"  预估总收入: ¥{report.total_revenue:.2f}")
+        report_lines.append(f"  预估总成本: ¥{report.total_cost:.2f}")
+        report_lines.append(f"  预估利润: ¥{report.total_revenue - report.total_cost:.2f}")
+        if report.total_revenue > 0:
+            profit_margin = (report.total_revenue - report.total_cost) / report.total_revenue * 100
+            report_lines.append(f"  利润率: {profit_margin:.1f}%")
+        else:
+            report_lines.append(f"  利润率: 0.0%")
+    else:
+        report_lines.append("  今日无运营数据")
     report_lines.append("")
     
     if report.anomalies:

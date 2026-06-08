@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+from dataclasses import dataclass, field
 from datetime import datetime, date, timedelta
 from typing import Dict, List, Tuple, Optional
 from .models import Order, Vehicle, Driver, Trip, DailyReport
@@ -52,57 +53,292 @@ def generate_id(prefix: str, seq: int) -> str:
     return f"{prefix}{seq:04d}"
 
 
-def load_orders(filepath: str) -> List[Order]:
-    orders = []
+@dataclass
+class ValidationError:
+    row_number: int
+    field: str
+    value: str
+    error: str
+
+
+@dataclass
+class ValidationResult:
+    valid_orders: List[Order] = field(default_factory=list)
+    valid_vehicles: List[Vehicle] = field(default_factory=list)
+    valid_drivers: List[Driver] = field(default_factory=list)
+    errors: List[ValidationError] = field(default_factory=list)
+    
+    @property
+    def has_errors(self) -> bool:
+        return len(self.errors) > 0
+    
+    @property
+    def error_count(self) -> int:
+        return len(self.errors)
+
+
+def _check_missing_fields(row: dict, required_fields: List[str], row_num: int) -> List[ValidationError]:
+    errors = []
+    for field in required_fields:
+        if field not in row or row[field] is None or str(row[field]).strip() == "":
+            errors.append(ValidationError(
+                row_number=row_num,
+                field=field,
+                value=str(row.get(field, "")),
+                error=f"字段 '{field}' 缺失或为空"
+            ))
+    return errors
+
+
+def _parse_float(value: str, field: str, row_num: int) -> Tuple[float | None, List[ValidationError]]:
+    errors = []
+    try:
+        return float(value), errors
+    except (ValueError, TypeError):
+        errors.append(ValidationError(
+            row_number=row_num,
+            field=field,
+            value=str(value),
+            error=f"字段 '{field}' 必须是数字，当前值为 '{value}'"
+        ))
+        return None, errors
+
+
+def _parse_datetime(value: str, field: str, row_num: int, fmt: str = '%Y-%m-%d %H:%M:%S') -> Tuple[datetime | None, List[ValidationError]]:
+    errors = []
+    try:
+        return datetime.strptime(value, fmt), errors
+    except ValueError:
+        errors.append(ValidationError(
+            row_number=row_num,
+            field=field,
+            value=str(value),
+            error=f"字段 '{field}' 日期格式错误，应为 '{fmt}'，当前值为 '{value}'"
+        ))
+        return None, errors
+
+
+def _parse_date(value: str, field: str, row_num: int, fmt: str = '%Y-%m-%d') -> Tuple[date | None, List[ValidationError]]:
+    errors = []
+    try:
+        return datetime.strptime(value, fmt).date(), errors
+    except ValueError:
+        errors.append(ValidationError(
+            row_number=row_num,
+            field=field,
+            value=str(value),
+            error=f"字段 '{field}' 日期格式错误，应为 '{fmt}'，当前值为 '{value}'"
+        ))
+        return None, errors
+
+
+def load_orders(filepath: str, validate: bool = True) -> List[Order]:
+    result = load_orders_with_validation(filepath)
+    if result.has_errors:
+        print_validation_errors(result.errors, "订单")
+    return result.valid_orders
+
+
+def load_orders_with_validation(filepath: str) -> ValidationResult:
+    result = ValidationResult()
+    required_fields = ['order_id', 'customer', 'origin', 'destination', 'cargo', 'weight', 'volume', 'delivery_deadline']
+    
     with open(filepath, 'r', encoding='utf-8-sig') as f:
         reader = csv.DictReader(f)
-        for row in reader:
-            deadline = datetime.strptime(row['delivery_deadline'], '%Y-%m-%d %H:%M:%S')
-            order = Order(
-                order_id=row['order_id'],
-                customer=row['customer'],
-                origin=row['origin'],
-                destination=row['destination'],
-                cargo=row['cargo'],
-                weight=float(row['weight']),
-                volume=float(row['volume']),
-                delivery_deadline=deadline
-            )
-            orders.append(order)
-    return orders
+        for row_num, row in enumerate(reader, start=2):
+            row_errors = _check_missing_fields(row, required_fields, row_num)
+            if row_errors:
+                result.errors.extend(row_errors)
+                continue
+            
+            weight, weight_errors = _parse_float(row['weight'], 'weight', row_num)
+            volume, volume_errors = _parse_float(row['volume'], 'volume', row_num)
+            deadline, deadline_errors = _parse_datetime(row['delivery_deadline'], 'delivery_deadline', row_num)
+            
+            result.errors.extend(weight_errors)
+            result.errors.extend(volume_errors)
+            result.errors.extend(deadline_errors)
+            
+            if weight is not None and volume is not None and deadline is not None:
+                if weight <= 0:
+                    result.errors.append(ValidationError(
+                        row_number=row_num,
+                        field='weight',
+                        value=str(weight),
+                        error=f"重量必须大于0，当前值为 {weight}"
+                    ))
+                    continue
+                if volume <= 0:
+                    result.errors.append(ValidationError(
+                        row_number=row_num,
+                        field='volume',
+                        value=str(volume),
+                        error=f"体积必须大于0，当前值为 {volume}"
+                    ))
+                    continue
+                if deadline < datetime.now():
+                    result.errors.append(ValidationError(
+                        row_number=row_num,
+                        field='delivery_deadline',
+                        value=deadline.strftime('%Y-%m-%d %H:%M:%S'),
+                        error=f"送达截止时间已过"
+                    ))
+                
+                order = Order(
+                    order_id=row['order_id'],
+                    customer=row['customer'],
+                    origin=row['origin'],
+                    destination=row['destination'],
+                    cargo=row['cargo'],
+                    weight=weight,
+                    volume=volume,
+                    delivery_deadline=deadline
+                )
+                result.valid_orders.append(order)
+    
+    return result
 
 
-def load_vehicles(filepath: str) -> List[Vehicle]:
-    vehicles = []
+def load_vehicles(filepath: str, validate: bool = True) -> List[Vehicle]:
+    result = load_vehicles_with_validation(filepath)
+    if result.has_errors:
+        print_validation_errors(result.errors, "车辆")
+    return result.valid_vehicles
+
+
+def load_vehicles_with_validation(filepath: str) -> ValidationResult:
+    result = ValidationResult()
+    required_fields = ['plate_number', 'vehicle_type', 'max_weight', 'max_volume', 'inspection_date']
+    
     with open(filepath, 'r', encoding='utf-8-sig') as f:
         reader = csv.DictReader(f)
-        for row in reader:
-            inspection = datetime.strptime(row['inspection_date'], '%Y-%m-%d').date()
-            vehicle = Vehicle(
-                plate_number=row['plate_number'],
-                vehicle_type=row['vehicle_type'],
-                max_weight=float(row['max_weight']),
-                max_volume=float(row['max_volume']),
-                inspection_date=inspection,
-                fuel_consumption=float(row.get('fuel_consumption', '25.0'))
-            )
-            vehicles.append(vehicle)
-    return vehicles
+        for row_num, row in enumerate(reader, start=2):
+            row_errors = _check_missing_fields(row, required_fields, row_num)
+            if row_errors:
+                result.errors.extend(row_errors)
+                continue
+            
+            max_weight, weight_errors = _parse_float(row['max_weight'], 'max_weight', row_num)
+            max_volume, volume_errors = _parse_float(row['max_volume'], 'max_volume', row_num)
+            inspection_date, inspection_errors = _parse_date(row['inspection_date'], 'inspection_date', row_num)
+            fuel_consumption, fc_errors = _parse_float(row.get('fuel_consumption', '25.0'), 'fuel_consumption', row_num)
+            
+            result.errors.extend(weight_errors)
+            result.errors.extend(volume_errors)
+            result.errors.extend(inspection_errors)
+            result.errors.extend(fc_errors)
+            
+            if max_weight is not None and max_volume is not None and inspection_date is not None and fuel_consumption is not None:
+                if max_weight <= 0:
+                    result.errors.append(ValidationError(
+                        row_number=row_num,
+                        field='max_weight',
+                        value=str(max_weight),
+                        error=f"载重限制必须大于0"
+                    ))
+                    continue
+                if max_volume <= 0:
+                    result.errors.append(ValidationError(
+                        row_number=row_num,
+                        field='max_volume',
+                        value=str(max_volume),
+                        error=f"体积限制必须大于0"
+                    ))
+                    continue
+                if fuel_consumption <= 0:
+                    result.errors.append(ValidationError(
+                        row_number=row_num,
+                        field='fuel_consumption',
+                        value=str(fuel_consumption),
+                        error=f"油耗必须大于0"
+                    ))
+                    continue
+                
+                days_left = (inspection_date - date.today()).days
+                if days_left < -365:
+                    result.errors.append(ValidationError(
+                        row_number=row_num,
+                        field='inspection_date',
+                        value=inspection_date.strftime('%Y-%m-%d'),
+                        error=f"年检日期异常，已过期超过1年"
+                    ))
+                    continue
+                
+                vehicle = Vehicle(
+                    plate_number=row['plate_number'],
+                    vehicle_type=row['vehicle_type'],
+                    max_weight=max_weight,
+                    max_volume=max_volume,
+                    inspection_date=inspection_date,
+                    fuel_consumption=fuel_consumption,
+                    status=row.get('status', 'available')
+                )
+                result.valid_vehicles.append(vehicle)
+    
+    return result
 
 
-def load_drivers(filepath: str) -> List[Driver]:
-    drivers = []
+def load_drivers(filepath: str, validate: bool = True) -> List[Driver]:
+    result = load_drivers_with_validation(filepath)
+    if result.has_errors:
+        print_validation_errors(result.errors, "司机")
+    return result.valid_drivers
+
+
+def load_drivers_with_validation(filepath: str) -> ValidationResult:
+    result = ValidationResult()
+    required_fields = ['driver_id', 'name', 'phone']
+    
     with open(filepath, 'r', encoding='utf-8-sig') as f:
         reader = csv.DictReader(f)
-        for row in reader:
-            driver = Driver(
-                driver_id=row['driver_id'],
-                name=row['name'],
-                phone=row['phone'],
-                max_daily_hours=float(row.get('max_daily_hours', '8.0'))
-            )
-            drivers.append(driver)
-    return drivers
+        for row_num, row in enumerate(reader, start=2):
+            row_errors = _check_missing_fields(row, required_fields, row_num)
+            if row_errors:
+                result.errors.extend(row_errors)
+                continue
+            
+            max_hours, hours_errors = _parse_float(row.get('max_daily_hours', '8.0'), 'max_daily_hours', row_num)
+            result.errors.extend(hours_errors)
+            
+            if max_hours is not None:
+                if max_hours <= 0 or max_hours > 24:
+                    result.errors.append(ValidationError(
+                        row_number=row_num,
+                        field='max_daily_hours',
+                        value=str(max_hours),
+                        error=f"日最大工时必须在 0-24 小时之间"
+                    ))
+                    continue
+                
+                driver = Driver(
+                    driver_id=row['driver_id'],
+                    name=row['name'],
+                    phone=row['phone'],
+                    max_daily_hours=max_hours
+                )
+                result.valid_drivers.append(driver)
+    
+    return result
+
+
+def print_validation_errors(errors: List[ValidationError], data_type: str) -> None:
+    if not errors:
+        return
+    
+    print(f"\n⚠️  {data_type}数据校验发现 {len(errors)} 个问题：")
+    print(f"{'-'*80}")
+    
+    rows = []
+    for err in errors:
+        rows.append([
+            err.row_number,
+            err.field,
+            err.value,
+            err.error
+        ])
+    
+    print_table(["行号", "字段", "值", "错误说明"], rows)
+    print(f"\nℹ️  以上行数据已跳过，其余 {len(errors)} 条外的有效数据已加载。")
 
 
 def save_trips(trips: List[Trip], filepath: str) -> None:

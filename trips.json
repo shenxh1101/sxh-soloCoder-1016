@@ -14,17 +14,17 @@
     "estimated_hours": 5.0,
     "estimated_fuel_cost": 562.5,
     "estimated_toll_cost": 240.0,
-    "departure_time": "2026-06-08 08:00:00",
-    "arrival_time": null,
-    "status": "delayed",
-    "delay_minutes": 45,
+    "departure_time": "2026-06-08 10:17:59",
+    "arrival_time": "2026-06-08 10:17:59",
+    "status": "completed",
+    "delay_minutes": 0,
     "reassigned": false,
-    "notes": "晚点45分钟，原因: G42高速交通事故拥堵，时间: 2026-06-08 09:37:48"
+    "notes": "实际出发: 2026-06-08 10:17:59\n实际到达: 2026-06-08 10:17:59\n班次完成: 2026-06-08 10:17:59"
   },
   {
     "trip_id": "T0002",
-    "vehicle_plate": "京B67890",
-    "driver_id": "D004",
+    "vehicle_plate": "京A23456",
+    "driver_id": "D002",
     "origin": "上海",
     "destination": "杭州",
     "orders": [
@@ -40,8 +40,8 @@
     "arrival_time": null,
     "status": "planned",
     "delay_minutes": 0,
-    "reassigned": true,
-    "notes": "改派原因: 原车辆临时故障需要维修; 车辆: 京A23456 -> 京B67890; 司机: D002 -> D004; 时间: 2026-06-08 09:38:00"
+    "reassigned": false,
+    "notes": ""
   },
   {
     "trip_id": "T0003",

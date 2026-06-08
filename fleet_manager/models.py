@@ -92,6 +92,8 @@ class DailyReport:
     report_date: date
     total_trips: int = 0
     completed_trips: int = 0
+    in_progress_trips: int = 0
+    planned_trips: int = 0
     delayed_trips: int = 0
     reassigned_trips: int = 0
     total_orders: int = 0

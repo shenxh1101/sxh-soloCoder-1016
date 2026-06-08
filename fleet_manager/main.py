@@ -3,6 +3,10 @@ import sys
 import os
 from datetime import date
 
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+
 from .commands.plan import generate_plan, show_plan
 from .commands.check import run_checks, check_vehicle
 from .commands.cost import run_cost_analysis
@@ -25,6 +29,7 @@ def main():
   安全合规检查:
     python -m fleet_manager.main check --type all
     python -m fleet_manager.main check --type inspection
+    python -m fleet_manager.main check --type schedule
     python -m fleet_manager.main check --vehicle 京A12345
   
   成本分析:
@@ -34,6 +39,9 @@ def main():
   
   调度管理:
     python -m fleet_manager.main delay --action query --vehicle 京A12345
+    python -m fleet_manager.main delay --action depart --trip T0001
+    python -m fleet_manager.main delay --action arrive --trip T0001
+    python -m fleet_manager.main delay --action complete --trip T0001
     python -m fleet_manager.main delay --action reassign --trip T0001 --new-vehicle 京B67890 --reason "车辆故障"
     python -m fleet_manager.main delay --action delay --trip T0001 --minutes 30 --reason "交通拥堵"
     python -m fleet_manager.main delay --action simulate --trip T0001 --minutes 60
@@ -56,7 +64,7 @@ def main():
     plan_parser.add_argument("--output-dir", default=".", help="输出目录")
     
     check_parser = subparsers.add_parser("check", help="安全合规检查")
-    check_parser.add_argument("--type", default="all", choices=["all", "inspection", "hours", "load"], help="检查类型")
+    check_parser.add_argument("--type", default="all", choices=["all", "inspection", "hours", "load", "schedule"], help="检查类型")
     check_parser.add_argument("--orders", default="data/orders.csv", help="订单数据文件路径")
     check_parser.add_argument("--vehicles", default="data/vehicles.csv", help="车辆数据文件路径")
     check_parser.add_argument("--drivers", default="data/drivers.csv", help="司机数据文件路径")
@@ -71,8 +79,8 @@ def main():
     cost_parser.add_argument("--vehicles", default="data/vehicles.csv", help="车辆数据文件路径")
     cost_parser.add_argument("--output-dir", default=".", help="输出目录")
     
-    delay_parser = subparsers.add_parser("delay", help="调度管理（改派/晚点/查询）")
-    delay_parser.add_argument("--action", default="query", choices=["query", "reassign", "delay", "simulate"], help="操作类型")
+    delay_parser = subparsers.add_parser("delay", help="调度管理（出发/到达/完成/改派/晚点/查询）")
+    delay_parser.add_argument("--action", default="query", choices=["query", "depart", "arrive", "complete", "reassign", "delay", "simulate"], help="操作类型")
     delay_parser.add_argument("--trip", help="班次ID")
     delay_parser.add_argument("--vehicle", help="车牌号")
     delay_parser.add_argument("--new-vehicle", help="新车牌号（reassign模式）")
@@ -137,6 +145,7 @@ def main():
                 reason=args.reason,
                 vehicles_file=args.vehicles,
                 drivers_file=args.drivers,
+                orders_file=args.orders,
                 output_dir=args.output_dir
             )
         

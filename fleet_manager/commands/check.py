@@ -96,6 +96,85 @@ def check_load_capacity(vehicles_file: str, trips_file: str) -> List[dict]:
     return issues
 
 
+def check_schedule_conflicts(
+    trips_file: str,
+    output_dir: str = "."
+) -> Tuple[List[dict], List[dict]]:
+    trips = load_trips(trips_file)
+    
+    vehicle_conflicts = []
+    driver_conflicts = []
+    
+    from collections import defaultdict
+    
+    vehicle_trips = defaultdict(list)
+    driver_trips = defaultdict(list)
+    
+    for trip in trips:
+        if not trip.departure_time or not trip.arrival_time:
+            continue
+        trip_date = trip.departure_time.date()
+        vehicle_trips[(trip.vehicle_plate, trip_date)].append(trip)
+        driver_trips[(trip.driver_id, trip_date)].append(trip)
+    
+    def find_overlaps(trip_list: List[Trip]) -> List[Tuple[Trip, Trip, str]]:
+        overlaps = []
+        trip_list.sort(key=lambda t: t.departure_time or datetime.min)
+        
+        for i in range(len(trip_list)):
+            for j in range(i + 1, len(trip_list)):
+                t1 = trip_list[i]
+                t2 = trip_list[j]
+                
+                if t1.departure_time and t1.arrival_time and t2.departure_time and t2.arrival_time:
+                    if t2.departure_time < t1.arrival_time:
+                        overlap_minutes = int((t1.arrival_time - t2.departure_time).total_seconds() / 60)
+                        overlaps.append((t1, t2, f"时间重叠 {overlap_minutes} 分钟"))
+                    elif (t2.departure_time - t1.arrival_time).total_seconds() < 1800:
+                        gap_minutes = int((t2.departure_time - t1.arrival_time).total_seconds() / 60)
+                        overlaps.append((t1, t2, f"间隔仅 {gap_minutes} 分钟，建议调整"))
+        
+        return overlaps
+    
+    for (vehicle, trip_date), trip_list in vehicle_trips.items():
+        overlaps = find_overlaps(trip_list)
+        for t1, t2, detail in overlaps:
+            vehicle_conflicts.append({
+                "type": "车辆排班冲突",
+                "vehicle": vehicle,
+                "date": trip_date,
+                "trip1_id": t1.trip_id,
+                "trip1_route": t1.route_key,
+                "trip1_departure": t1.departure_time.strftime("%H:%M") if t1.departure_time else "-",
+                "trip1_arrival": t1.arrival_time.strftime("%H:%M") if t1.arrival_time else "-",
+                "trip2_id": t2.trip_id,
+                "trip2_route": t2.route_key,
+                "trip2_departure": t2.departure_time.strftime("%H:%M") if t2.departure_time else "-",
+                "trip2_arrival": t2.arrival_time.strftime("%H:%M") if t2.arrival_time else "-",
+                "detail": detail
+            })
+    
+    for (driver, trip_date), trip_list in driver_trips.items():
+        overlaps = find_overlaps(trip_list)
+        for t1, t2, detail in overlaps:
+            driver_conflicts.append({
+                "type": "司机排班冲突",
+                "driver": driver,
+                "date": trip_date,
+                "trip1_id": t1.trip_id,
+                "trip1_route": t1.route_key,
+                "trip1_departure": t1.departure_time.strftime("%H:%M") if t1.departure_time else "-",
+                "trip1_arrival": t1.arrival_time.strftime("%H:%M") if t1.arrival_time else "-",
+                "trip2_id": t2.trip_id,
+                "trip2_route": t2.route_key,
+                "trip2_departure": t2.departure_time.strftime("%H:%M") if t2.departure_time else "-",
+                "trip2_arrival": t2.arrival_time.strftime("%H:%M") if t2.arrival_time else "-",
+                "detail": detail
+            })
+    
+    return vehicle_conflicts, driver_conflicts
+
+
 def run_checks(
     vehicles_file: str, drivers_file: str, orders_file: str,
     check_type: str = "all", output_dir: str = "."
@@ -202,6 +281,49 @@ def run_checks(
             )
         else:
             print("✅ 所有班次载重合规")
+    
+    if check_type in ["all", "schedule"]:
+        print(f"\n--- 排班冲突检查 ---")
+        vehicle_conflicts, driver_conflicts = check_schedule_conflicts(trips_file, output_dir)
+        
+        if vehicle_conflicts or driver_conflicts:
+            has_issues = True
+            
+            if vehicle_conflicts:
+                print(f"\n⚠️  车辆排班冲突 ({len(vehicle_conflicts)} 处):")
+                rows = []
+                for c in vehicle_conflicts:
+                    rows.append([
+                        c["vehicle"],
+                        c["date"].strftime("%Y-%m-%d"),
+                        f"{c['trip1_id']}\n{c['trip2_id']}",
+                        f"{c['trip1_departure']}-{c['trip1_arrival']}\n{c['trip2_departure']}-{c['trip2_arrival']}",
+                        f"{c['trip1_route']}\n{c['trip2_route']}",
+                        c["detail"]
+                    ])
+                print_table(
+                    ["车牌号", "日期", "班次ID", "时间段", "路线", "问题说明"],
+                    rows
+                )
+            
+            if driver_conflicts:
+                print(f"\n⚠️  司机排班冲突 ({len(driver_conflicts)} 处):")
+                rows = []
+                for c in driver_conflicts:
+                    rows.append([
+                        c["driver"],
+                        c["date"].strftime("%Y-%m-%d"),
+                        f"{c['trip1_id']}\n{c['trip2_id']}",
+                        f"{c['trip1_departure']}-{c['trip1_arrival']}\n{c['trip2_departure']}-{c['trip2_arrival']}",
+                        f"{c['trip1_route']}\n{c['trip2_route']}",
+                        c["detail"]
+                    ])
+                print_table(
+                    ["司机ID", "日期", "班次ID", "时间段", "路线", "问题说明"],
+                    rows
+                )
+        else:
+            print("✅ 无排班冲突")
     
     if check_type == "all":
         print(f"\n{'='*60}")

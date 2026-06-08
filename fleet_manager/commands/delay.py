@@ -86,21 +86,132 @@ def record_delay(
     return trip
 
 
+def mark_departure(
+    trip_id: str,
+    actual_time: datetime | None = None,
+    output_dir: str = "."
+) -> Trip | None:
+    trips_file = os.path.join(output_dir, "trips.json")
+    trips = load_trips(trips_file)
+    
+    trip = next((t for t in trips if t.trip_id == trip_id), None)
+    if not trip:
+        print(f"❌ 未找到班次 {trip_id}")
+        return None
+    
+    if trip.status not in ["planned", "delayed"]:
+        print(f"⚠️  班次 {trip_id} 当前状态为 {trip.status}，无法标记出发")
+        return None
+    
+    actual_time = actual_time or datetime.now()
+    trip.departure_time = actual_time
+    trip.status = "in_progress"
+    
+    estimated_arrival = actual_time + timedelta(hours=trip.estimated_hours)
+    if trip.delay_minutes > 0:
+        estimated_arrival += timedelta(minutes=trip.delay_minutes)
+    trip.arrival_time = estimated_arrival
+    
+    notes = f"实际出发: {actual_time.strftime('%Y-%m-%d %H:%M:%S')}"
+    if trip.notes:
+        trip.notes += "\n" + notes
+    else:
+        trip.notes = notes
+    
+    save_trips(trips, trips_file)
+    return trip
+
+
+def mark_arrival(
+    trip_id: str,
+    actual_time: datetime | None = None,
+    output_dir: str = "."
+) -> Trip | None:
+    trips_file = os.path.join(output_dir, "trips.json")
+    trips = load_trips(trips_file)
+    
+    trip = next((t for t in trips if t.trip_id == trip_id), None)
+    if not trip:
+        print(f"❌ 未找到班次 {trip_id}")
+        return None
+    
+    if trip.status != "in_progress":
+        print(f"⚠️  班次 {trip_id} 当前状态为 {trip.status}，无法标记到达，请先标记出发")
+        return None
+    
+    actual_time = actual_time or datetime.now()
+    trip.arrival_time = actual_time
+    
+    if trip.departure_time:
+        actual_duration = (actual_time - trip.departure_time).total_seconds() / 3600
+        expected_duration = trip.estimated_hours + (trip.delay_minutes / 60)
+        if actual_duration > expected_duration:
+            additional_delay = int((actual_duration - expected_duration) * 60)
+            trip.delay_minutes += additional_delay
+    
+    notes = f"实际到达: {actual_time.strftime('%Y-%m-%d %H:%M:%S')}"
+    if trip.notes:
+        trip.notes += "\n" + notes
+    else:
+        trip.notes = notes
+    
+    save_trips(trips, trips_file)
+    return trip
+
+
+def mark_complete(
+    trip_id: str,
+    actual_time: datetime | None = None,
+    output_dir: str = "."
+) -> Trip | None:
+    trips_file = os.path.join(output_dir, "trips.json")
+    trips = load_trips(trips_file)
+    
+    trip = next((t for t in trips if t.trip_id == trip_id), None)
+    if not trip:
+        print(f"❌ 未找到班次 {trip_id}")
+        return None
+    
+    if trip.status not in ["in_progress", "delayed"]:
+        if trip.status == "completed":
+            print(f"ℹ️  班次 {trip_id} 已标记为完成")
+            return trip
+        print(f"⚠️  班次 {trip_id} 当前状态为 {trip.status}，无法标记完成")
+        return None
+    
+    actual_time = actual_time or datetime.now()
+    
+    if not trip.arrival_time:
+        trip.arrival_time = actual_time
+    
+    trip.status = "completed"
+    
+    notes = f"班次完成: {actual_time.strftime('%Y-%m-%d %H:%M:%S')}"
+    if trip.notes:
+        trip.notes += "\n" + notes
+    else:
+        trip.notes = notes
+    
+    save_trips(trips, trips_file)
+    return trip
+
+
 def simulate_delay_impact(
     trip_id: str,
     delay_minutes: int,
     drivers_file: str,
     vehicles_file: str,
+    orders_file: str,
     output_dir: str = "."
 ) -> Dict:
     trips_file = os.path.join(output_dir, "trips.json")
     trips = load_trips(trips_file)
     drivers = load_drivers(drivers_file)
     vehicles = load_vehicles(vehicles_file)
-    orders_file = os.path.join(output_dir, "orders_status.json")
-    orders = load_orders("data/orders.csv") if os.path.exists("data/orders.csv") else []
+    orders_status_file = os.path.join(output_dir, "orders_status.json")
+    orders = load_orders(orders_file) if os.path.exists(orders_file) else []
     if orders:
-        orders = load_orders_status(orders_file, orders)
+        orders = load_orders_status(orders_status_file, orders)
     
     trip = next((t for t in trips if t.trip_id == trip_id), None)
     if not trip:
@@ -206,13 +317,44 @@ def run_delay_command(
     reason: str = "",
     vehicles_file: str = "data/vehicles.csv",
     drivers_file: str = "data/drivers.csv",
+    orders_file: str = "data/orders.csv",
     output_dir: str = "."
 ) -> None:
     print(f"\n{'='*60}")
     print("调度管理")
     print(f"{'='*60}")
     
-    if action == "reassign" and trip_id:
+    if action == "depart" and trip_id:
+        print(f"\n🚛 标记出发 - 班次 {trip_id}")
+        trip = mark_departure(trip_id, None, output_dir)
+        if trip:
+            print(f"✅ 已标记出发！")
+            print(f"   实际出发: {trip.departure_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"   预计到达: {trip.arrival_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"   当前状态: {trip.status}")
+    
+    elif action == "arrive" and trip_id:
+        print(f"\n🏁 标记到达 - 班次 {trip_id}")
+        trip = mark_arrival(trip_id, None, output_dir)
+        if trip:
+            print(f"✅ 已标记到达！")
+            print(f"   实际到达: {trip.arrival_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"   累计晚点: {trip.delay_minutes} 分钟")
+            print(f"   当前状态: {trip.status}")
+    
+    elif action == "complete" and trip_id:
+        print(f"\n✅ 标记完成 - 班次 {trip_id}")
+        trip = mark_complete(trip_id, None, output_dir)
+        if trip:
+            print(f"✅ 已标记完成！")
+            if trip.departure_time:
+                print(f"   实际出发: {trip.departure_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            if trip.arrival_time:
+                print(f"   实际到达: {trip.arrival_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"   累计晚点: {trip.delay_minutes} 分钟")
+            print(f"   当前状态: {trip.status}")
+    
+    elif action == "reassign" and trip_id:
         print(f"\n🔄 临时改派 - 班次 {trip_id}")
         trip = reassign_trip(trip_id, new_vehicle, new_driver, reason, output_dir)
         if trip:
@@ -234,7 +376,7 @@ def run_delay_command(
     
     elif action == "simulate" and trip_id and delay_minutes > 0:
         print(f"\n🔮 晚点影响模拟 - 班次 {trip_id}")
-        impact = simulate_delay_impact(trip_id, delay_minutes, drivers_file, vehicles_file, output_dir)
+        impact = simulate_delay_impact(trip_id, delay_minutes, drivers_file, vehicles_file, orders_file, output_dir)
         if not impact:
             return
         
@@ -296,7 +438,7 @@ def run_delay_command(
             print(f"\nℹ️  该车今日无任务")
             return
         
-        orders = load_orders("data/orders.csv") if os.path.exists("data/orders.csv") else []
+        orders = load_orders(orders_file) if os.path.exists(orders_file) else []
         if orders:
             orders_status_file = os.path.join(output_dir, "orders_status.json")
             orders = load_orders_status(orders_status_file, orders)

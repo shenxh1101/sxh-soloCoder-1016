@@ -1,0 +1,4 @@
+order_id,customer,origin,destination,cargo,weight,volume,delivery_deadline
+O0006,南京金鹰_custom,上海,南京,生鲜果蔬,3.5,7.0,2026-06-08 14:00:00
+O0005,杭州银泰百货_custom,上海,杭州,家居用品,6.0,15.0,2026-06-08 16:00:00
+O0011,广州广百百货_custom,广州,深圳,生鲜果蔬,2.5,5.5,2026-06-08 20:00:00
