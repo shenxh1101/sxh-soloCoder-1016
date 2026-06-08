@@ -321,6 +321,61 @@ def load_drivers_with_validation(filepath: str) -> ValidationResult:
     return result
 
 
+def save_import_errors(
+    errors: List[ValidationError],
+    data_type: str,
+    source_file: str,
+    output_dir: str = "."
+) -> None:
+    if not errors:
+        return
+    
+    import_errors_file = os.path.join(output_dir, "import_errors.json")
+    
+    existing_errors = []
+    if os.path.exists(import_errors_file):
+        try:
+            with open(import_errors_file, 'r', encoding='utf-8') as f:
+                existing_errors = json.load(f)
+        except:
+            existing_errors = []
+    
+    error_data = []
+    for err in errors:
+        error_data.append({
+            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "data_type": data_type,
+            "source_file": source_file,
+            "row_number": err.row_number,
+            "field": err.field,
+            "value": err.value,
+            "error": err.error
+        })
+    
+    existing_errors.extend(error_data)
+    
+    with open(import_errors_file, 'w', encoding='utf-8') as f:
+        json.dump(existing_errors, f, ensure_ascii=False, indent=2)
+
+
+def load_import_errors(output_dir: str = ".") -> List[dict]:
+    import_errors_file = os.path.join(output_dir, "import_errors.json")
+    if not os.path.exists(import_errors_file):
+        return []
+    
+    try:
+        with open(import_errors_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        return []
+
+
+def clear_import_errors(output_dir: str = ".") -> None:
+    import_errors_file = os.path.join(output_dir, "import_errors.json")
+    if os.path.exists(import_errors_file):
+        os.remove(import_errors_file)
+
+
 def print_validation_errors(errors: List[ValidationError], data_type: str) -> None:
     if not errors:
         return
@@ -338,12 +393,21 @@ def print_validation_errors(errors: List[ValidationError], data_type: str) -> No
         ])
     
     print_table(["行号", "字段", "值", "错误说明"], rows)
-    print(f"\nℹ️  以上行数据已跳过，其余 {len(errors)} 条外的有效数据已加载。")
+    print(f"\nℹ️  以上行数据已跳过，错误信息已保存至 import_errors.json")
 
 
 def save_trips(trips: List[Trip], filepath: str) -> None:
     data = []
     for trip in trips:
+        history_data = []
+        for entry in trip.history:
+            history_data.append({
+                'timestamp': entry.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                'action_type': entry.action_type,
+                'action': entry.action,
+                'reason': entry.reason,
+                'notes': entry.notes
+            })
         data.append({
             'trip_id': trip.trip_id,
             'vehicle_plate': trip.vehicle_plate,
@@ -362,21 +426,36 @@ def save_trips(trips: List[Trip], filepath: str) -> None:
             'status': trip.status,
             'delay_minutes': trip.delay_minutes,
             'reassigned': trip.reassigned,
-            'notes': trip.notes
+            'notes': trip.notes,
+            'history': history_data
         })
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 def load_trips(filepath: str) -> List[Trip]:
+    from .models import TripHistoryEntry
+    
     if not os.path.exists(filepath):
         return []
     with open(filepath, 'r', encoding='utf-8') as f:
         data = json.load(f)
     trips = []
     for item in data:
-        departure = datetime.strptime(item['departure_time'], '%Y-%m-%d %H:%M:%S') if item['departure_time'] else None
-        arrival = datetime.strptime(item['arrival_time'], '%Y-%m-%d %H:%M:%S') if item['arrival_time'] else None
+        departure = datetime.strptime(item['departure_time'], '%Y-%m-%d %H:%M:%S') if item.get('departure_time') else None
+        arrival = datetime.strptime(item['arrival_time'], '%Y-%m-%d %H:%M:%S') if item.get('arrival_time') else None
+        
+        history = []
+        for h in item.get('history', []):
+            ts = datetime.strptime(h['timestamp'], '%Y-%m-%d %H:%M:%S')
+            history.append(TripHistoryEntry(
+                timestamp=ts,
+                action_type=h['action_type'],
+                action=h['action'],
+                reason=h.get('reason', ''),
+                notes=h.get('notes', '')
+            ))
+        
         trip = Trip(
             trip_id=item['trip_id'],
             vehicle_plate=item['vehicle_plate'],
@@ -395,7 +474,8 @@ def load_trips(filepath: str) -> List[Trip]:
             status=item['status'],
             delay_minutes=item['delay_minutes'],
             reassigned=item['reassigned'],
-            notes=item['notes']
+            notes=item.get('notes', ''),
+            history=history
         )
         trips.append(trip)
     return trips

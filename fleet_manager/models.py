@@ -58,6 +58,15 @@ class Driver:
 
 
 @dataclass
+class TripHistoryEntry:
+    timestamp: datetime
+    action_type: str
+    action: str
+    reason: str = ""
+    notes: str = ""
+
+
+@dataclass
 class Trip:
     trip_id: str
     vehicle_plate: str
@@ -77,6 +86,7 @@ class Trip:
     delay_minutes: int = 0
     reassigned: bool = False
     notes: str = ""
+    history: List[TripHistoryEntry] = field(default_factory=list)
 
     @property
     def total_cost(self) -> float:

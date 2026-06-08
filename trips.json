@@ -14,12 +14,28 @@
     "estimated_hours": 5.0,
     "estimated_fuel_cost": 562.5,
     "estimated_toll_cost": 240.0,
-    "departure_time": "2026-06-08 10:17:59",
-    "arrival_time": "2026-06-08 10:17:59",
-    "status": "completed",
-    "delay_minutes": 0,
+    "departure_time": "2026-06-08 10:40:10",
+    "arrival_time": "2026-06-08 16:10:10",
+    "status": "in_progress",
+    "delay_minutes": 30,
     "reassigned": false,
-    "notes": "实际出发: 2026-06-08 10:17:59\n实际到达: 2026-06-08 10:17:59\n班次完成: 2026-06-08 10:17:59"
+    "notes": "实际出发: 2026-06-08 10:40:10，正常发班\n晚点30分钟，预计到达延后至 2026-06-08 16:10:10",
+    "history": [
+      {
+        "timestamp": "2026-06-08 10:40:10",
+        "action_type": "departure",
+        "action": "车辆出发",
+        "reason": "正常发班",
+        "notes": "实际出发: 2026-06-08 10:40:10，正常发班"
+      },
+      {
+        "timestamp": "2026-06-08 10:40:10",
+        "action_type": "delay",
+        "action": "晚点 30 分钟",
+        "reason": "高速拥堵",
+        "notes": "晚点30分钟，预计到达延后至 2026-06-08 16:10:10"
+      }
+    ]
   },
   {
     "trip_id": "T0002",
@@ -36,12 +52,42 @@
     "estimated_hours": 3.0,
     "estimated_fuel_cost": 378.0,
     "estimated_toll_cost": 144.0,
-    "departure_time": "2026-06-08 08:00:00",
-    "arrival_time": null,
-    "status": "planned",
-    "delay_minutes": 0,
+    "departure_time": "2026-06-07 08:30:00",
+    "arrival_time": "2026-06-07 11:45:00",
+    "status": "completed",
+    "delay_minutes": 45,
     "reassigned": false,
-    "notes": ""
+    "notes": "晚点45分钟，预计到达延后至 2026-06-08 11:45:00\n实际出发: 2026-06-07 08:30:00，补录昨天发班\n实际到达: 2026-06-07 11:45:00，补录昨天到达\n班次完成: 2026-06-07 12:00:00，补录昨天完成签收",
+    "history": [
+      {
+        "timestamp": "2026-06-08 10:40:44",
+        "action_type": "delay",
+        "action": "晚点 45 分钟",
+        "reason": "车辆还没回来",
+        "notes": "晚点45分钟，预计到达延后至 2026-06-08 11:45:00"
+      },
+      {
+        "timestamp": "2026-06-07 08:30:00",
+        "action_type": "departure",
+        "action": "车辆出发",
+        "reason": "补录昨天发班",
+        "notes": "实际出发: 2026-06-07 08:30:00，补录昨天发班"
+      },
+      {
+        "timestamp": "2026-06-07 11:45:00",
+        "action_type": "arrival",
+        "action": "车辆到达",
+        "reason": "补录昨天到达",
+        "notes": "实际到达: 2026-06-07 11:45:00，补录昨天到达"
+      },
+      {
+        "timestamp": "2026-06-07 12:00:00",
+        "action_type": "complete",
+        "action": "班次完成",
+        "reason": "补录昨天完成签收",
+        "notes": "班次完成: 2026-06-07 12:00:00，补录昨天完成签收"
+      }
+    ]
   },
   {
     "trip_id": "T0003",
@@ -58,11 +104,34 @@
     "estimated_hours": 2.5,
     "estimated_fuel_cost": 360.0,
     "estimated_toll_cost": 120.0,
-    "departure_time": "2026-06-08 08:00:00",
-    "arrival_time": null,
-    "status": "planned",
+    "departure_time": "2026-06-08 10:40:10",
+    "arrival_time": "2026-06-08 10:40:11",
+    "status": "completed",
     "delay_minutes": 0,
     "reassigned": false,
-    "notes": ""
+    "notes": "实际出发: 2026-06-08 10:40:10，正常发班\n实际到达: 2026-06-08 10:40:11，到达目的地\n班次完成: 2026-06-08 10:40:11，签收完成",
+    "history": [
+      {
+        "timestamp": "2026-06-08 10:40:10",
+        "action_type": "departure",
+        "action": "车辆出发",
+        "reason": "正常发班",
+        "notes": "实际出发: 2026-06-08 10:40:10，正常发班"
+      },
+      {
+        "timestamp": "2026-06-08 10:40:11",
+        "action_type": "arrival",
+        "action": "车辆到达",
+        "reason": "到达目的地",
+        "notes": "实际到达: 2026-06-08 10:40:11，到达目的地"
+      },
+      {
+        "timestamp": "2026-06-08 10:40:11",
+        "action_type": "complete",
+        "action": "班次完成",
+        "reason": "签收完成",
+        "notes": "班次完成: 2026-06-08 10:40:11，签收完成"
+      }
+    ]
   }
 ]

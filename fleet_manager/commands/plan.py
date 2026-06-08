@@ -4,7 +4,9 @@ from typing import List, Dict, Tuple
 from ..models import Order, Vehicle, Driver, Trip
 from ..utils import (
     load_orders, load_vehicles, load_drivers,
+    load_orders_with_validation, load_vehicles_with_validation, load_drivers_with_validation,
     save_trips, save_orders_status, load_orders_status, load_trips,
+    save_import_errors,
     get_route_distance, estimate_travel_hours,
     calculate_fuel_cost, calculate_toll_cost,
     generate_id, print_table
@@ -53,9 +55,17 @@ def generate_plan(
     orders_file: str, vehicles_file: str, drivers_file: str,
     output_dir: str = "."
 ) -> List[Trip]:
-    orders = load_orders(orders_file)
-    vehicles = load_vehicles(vehicles_file)
-    drivers = load_drivers(drivers_file)
+    orders_result = load_orders_with_validation(orders_file)
+    vehicles_result = load_vehicles_with_validation(vehicles_file)
+    drivers_result = load_drivers_with_validation(drivers_file)
+    
+    orders = orders_result.valid_orders
+    vehicles = vehicles_result.valid_vehicles
+    drivers = drivers_result.valid_drivers
+    
+    save_import_errors(orders_result.errors, "订单", orders_file, output_dir)
+    save_import_errors(vehicles_result.errors, "车辆", vehicles_file, output_dir)
+    save_import_errors(drivers_result.errors, "司机", drivers_file, output_dir)
     
     orders_status_file = os.path.join(output_dir, "orders_status.json")
     trips_file = os.path.join(output_dir, "trips.json")

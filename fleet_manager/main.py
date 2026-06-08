@@ -39,15 +39,18 @@ def main():
   
   调度管理:
     python -m fleet_manager.main delay --action query --vehicle 京A12345
+    python -m fleet_manager.main delay --action history --trip T0001
     python -m fleet_manager.main delay --action depart --trip T0001
     python -m fleet_manager.main delay --action arrive --trip T0001
     python -m fleet_manager.main delay --action complete --trip T0001
+    python -m fleet_manager.main delay --action depart --trip T0001 --actual-time "2026-06-08 08:30:00"
     python -m fleet_manager.main delay --action reassign --trip T0001 --new-vehicle 京B67890 --reason "车辆故障"
     python -m fleet_manager.main delay --action delay --trip T0001 --minutes 30 --reason "交通拥堵"
     python -m fleet_manager.main delay --action simulate --trip T0001 --minutes 60
   
   报表生成:
     python -m fleet_manager.main report --type daily
+    python -m fleet_manager.main report --type dashboard
     python -m fleet_manager.main report --type anomaly
     python -m fleet_manager.main report --type driver --driver D001
     python -m fleet_manager.main report --type all
@@ -79,21 +82,22 @@ def main():
     cost_parser.add_argument("--vehicles", default="data/vehicles.csv", help="车辆数据文件路径")
     cost_parser.add_argument("--output-dir", default=".", help="输出目录")
     
-    delay_parser = subparsers.add_parser("delay", help="调度管理（出发/到达/完成/改派/晚点/查询）")
-    delay_parser.add_argument("--action", default="query", choices=["query", "depart", "arrive", "complete", "reassign", "delay", "simulate"], help="操作类型")
+    delay_parser = subparsers.add_parser("delay", help="调度管理（流水账/出发/到达/完成/改派/晚点/查询）")
+    delay_parser.add_argument("--action", default="query", choices=["query", "history", "depart", "arrive", "complete", "reassign", "delay", "simulate"], help="操作类型")
     delay_parser.add_argument("--trip", help="班次ID")
     delay_parser.add_argument("--vehicle", help="车牌号")
     delay_parser.add_argument("--new-vehicle", help="新车牌号（reassign模式）")
     delay_parser.add_argument("--new-driver", help="新司机ID（reassign模式）")
     delay_parser.add_argument("--minutes", type=int, default=0, help="晚点分钟数（delay/simulate模式）")
     delay_parser.add_argument("--reason", default="", help="原因说明")
+    delay_parser.add_argument("--actual-time", help="实际时间（补录历史数据，格式：YYYY-MM-DD HH:MM:SS）")
     delay_parser.add_argument("--orders", default="data/orders.csv", help="订单数据文件路径")
     delay_parser.add_argument("--vehicles", default="data/vehicles.csv", help="车辆数据文件路径")
     delay_parser.add_argument("--drivers", default="data/drivers.csv", help="司机数据文件路径")
     delay_parser.add_argument("--output-dir", default=".", help="输出目录")
     
     report_parser = subparsers.add_parser("report", help="生成报表")
-    report_parser.add_argument("--type", default="daily", choices=["daily", "anomaly", "driver", "all"], help="报表类型")
+    report_parser.add_argument("--type", default="daily", choices=["daily", "dashboard", "anomaly", "driver", "all"], help="报表类型")
     report_parser.add_argument("--driver", help="司机ID（driver模式）")
     report_parser.add_argument("--orders", default="data/orders.csv", help="订单数据文件路径")
     report_parser.add_argument("--vehicles", default="data/vehicles.csv", help="车辆数据文件路径")
@@ -143,6 +147,7 @@ def main():
                 new_driver=args.new_driver,
                 delay_minutes=args.minutes,
                 reason=args.reason,
+                actual_time=args.actual_time,
                 vehicles_file=args.vehicles,
                 drivers_file=args.drivers,
                 orders_file=args.orders,

@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, date, timedelta
 from typing import List, Dict
-from ..models import Trip, Vehicle, Driver, Order
+from ..models import Trip, Vehicle, Driver, Order, TripHistoryEntry
 from ..utils import (
     load_trips, save_trips,
     load_vehicles, load_drivers, load_orders,
@@ -10,11 +10,42 @@ from ..utils import (
 )
 
 
+def _add_history(
+    trip: Trip,
+    action_type: str,
+    action: str,
+    reason: str = "",
+    notes: str = "",
+    timestamp: datetime | None = None
+) -> None:
+    timestamp = timestamp or datetime.now()
+    entry = TripHistoryEntry(
+        timestamp=timestamp,
+        action_type=action_type,
+        action=action,
+        reason=reason,
+        notes=notes
+    )
+    trip.history.append(entry)
+
+
+def get_trip_history(
+    trip_id: str,
+    output_dir: str = "."
+) -> Trip | None:
+    trips_file = os.path.join(output_dir, "trips.json")
+    trips = load_trips(trips_file)
+    
+    trip = next((t for t in trips if t.trip_id == trip_id), None)
+    return trip
+
+
 def reassign_trip(
     trip_id: str,
     new_vehicle: str | None = None,
     new_driver: str | None = None,
     reason: str = "",
+    actual_time: datetime | None = None,
     output_dir: str = "."
 ) -> Trip | None:
     trips_file = os.path.join(output_dir, "trips.json")
@@ -34,6 +65,14 @@ def reassign_trip(
         trip.driver_id = new_driver
     
     trip.reassigned = True
+    
+    action_parts = []
+    if new_vehicle:
+        action_parts.append(f"车辆 {old_vehicle}->{new_vehicle}")
+    if new_driver:
+        action_parts.append(f"司机 {old_driver}->{new_driver}")
+    action_desc = ", ".join(action_parts)
+    
     notes_parts = []
     if reason:
         notes_parts.append(f"改派原因: {reason}")
@@ -41,12 +80,23 @@ def reassign_trip(
         notes_parts.append(f"车辆: {old_vehicle} -> {new_vehicle}")
     if new_driver:
         notes_parts.append(f"司机: {old_driver} -> {new_driver}")
-    notes_parts.append(f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    actual_time = actual_time or datetime.now()
+    notes_parts.append(f"时间: {actual_time.strftime('%Y-%m-%d %H:%M:%S')}")
     
     if trip.notes:
         trip.notes += "\n" + "; ".join(notes_parts)
     else:
         trip.notes = "; ".join(notes_parts)
+    
+    _add_history(
+        trip,
+        action_type="reassign",
+        action=action_desc,
+        reason=reason,
+        notes="; ".join(notes_parts),
+        timestamp=actual_time
+    )
     
     save_trips(trips, trips_file)
     return trip
@@ -56,6 +106,7 @@ def record_delay(
     trip_id: str,
     delay_minutes: int,
     reason: str = "",
+    actual_time: datetime | None = None,
     output_dir: str = "."
 ) -> Trip | None:
     trips_file = os.path.join(output_dir, "trips.json")
@@ -67,20 +118,35 @@ def record_delay(
         return None
     
     trip.delay_minutes += delay_minutes
-    trip.status = "delayed"
+    
+    if trip.status != "in_progress" and trip.status != "completed":
+        trip.status = "delayed"
     
     if trip.arrival_time:
         trip.arrival_time += timedelta(minutes=delay_minutes)
+    elif trip.departure_time:
+        trip.arrival_time = trip.departure_time + timedelta(hours=trip.estimated_hours) + timedelta(minutes=trip.delay_minutes)
     
-    notes = f"晚点{delay_minutes}分钟"
-    if reason:
-        notes += f"，原因: {reason}"
-    notes += f"，时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    actual_time = actual_time or datetime.now()
+    
+    if trip.arrival_time:
+        notes = f"晚点{delay_minutes}分钟，预计到达延后至 {trip.arrival_time.strftime('%Y-%m-%d %H:%M:%S')}"
+    else:
+        notes = f"晚点{delay_minutes}分钟"
     
     if trip.notes:
         trip.notes += "\n" + notes
     else:
         trip.notes = notes
+    
+    _add_history(
+        trip,
+        action_type="delay",
+        action=f"晚点 {delay_minutes} 分钟",
+        reason=reason,
+        notes=notes,
+        timestamp=actual_time
+    )
     
     save_trips(trips, trips_file)
     return trip
@@ -89,6 +155,7 @@ def record_delay(
 def mark_departure(
     trip_id: str,
     actual_time: datetime | None = None,
+    reason: str = "",
     output_dir: str = "."
 ) -> Trip | None:
     trips_file = os.path.join(output_dir, "trips.json")
@@ -113,10 +180,21 @@ def mark_departure(
     trip.arrival_time = estimated_arrival
     
     notes = f"实际出发: {actual_time.strftime('%Y-%m-%d %H:%M:%S')}"
+    if reason:
+        notes += f"，{reason}"
     if trip.notes:
         trip.notes += "\n" + notes
     else:
         trip.notes = notes
+    
+    _add_history(
+        trip,
+        action_type="departure",
+        action="车辆出发",
+        reason=reason,
+        notes=notes,
+        timestamp=actual_time
+    )
     
     save_trips(trips, trips_file)
     return trip
@@ -125,6 +203,7 @@ def mark_departure(
 def mark_arrival(
     trip_id: str,
     actual_time: datetime | None = None,
+    reason: str = "",
     output_dir: str = "."
 ) -> Trip | None:
     trips_file = os.path.join(output_dir, "trips.json")
@@ -150,10 +229,21 @@ def mark_arrival(
             trip.delay_minutes += additional_delay
     
     notes = f"实际到达: {actual_time.strftime('%Y-%m-%d %H:%M:%S')}"
+    if reason:
+        notes += f"，{reason}"
     if trip.notes:
         trip.notes += "\n" + notes
     else:
         trip.notes = notes
+    
+    _add_history(
+        trip,
+        action_type="arrival",
+        action="车辆到达",
+        reason=reason,
+        notes=notes,
+        timestamp=actual_time
+    )
     
     save_trips(trips, trips_file)
     return trip
@@ -162,6 +252,7 @@ def mark_arrival(
 def mark_complete(
     trip_id: str,
     actual_time: datetime | None = None,
+    reason: str = "",
     output_dir: str = "."
 ) -> Trip | None:
     trips_file = os.path.join(output_dir, "trips.json")
@@ -187,10 +278,21 @@ def mark_complete(
     trip.status = "completed"
     
     notes = f"班次完成: {actual_time.strftime('%Y-%m-%d %H:%M:%S')}"
+    if reason:
+        notes += f"，{reason}"
     if trip.notes:
         trip.notes += "\n" + notes
     else:
         trip.notes = notes
+    
+    _add_history(
+        trip,
+        action_type="complete",
+        action="班次完成",
+        reason=reason,
+        notes=notes,
+        timestamp=actual_time
+    )
     
     save_trips(trips, trips_file)
     return trip
@@ -307,6 +409,94 @@ def query_vehicle_tasks(
     return vehicle_trips
 
 
+def _parse_time(time_str: str | None) -> datetime | None:
+    if not time_str:
+        return None
+    for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+        try:
+            return datetime.strptime(time_str, fmt)
+        except ValueError:
+            continue
+    print(f"⚠️  时间格式错误: {time_str}，应为 YYYY-MM-DD HH:MM:SS")
+    return None
+
+
+def _print_trip_history(trip: Trip, orders: List[Order]) -> None:
+    print(f"\n{'='*70}")
+    print(f"班次执行流水账 - {trip.trip_id}")
+    print(f"{'='*70}")
+    
+    status_map = {
+        "planned": "⏳ 待出发",
+        "in_progress": "🚚 运输中",
+        "completed": "✅ 已完成",
+        "delayed": "⚠️  晚点"
+    }
+    status = status_map.get(trip.status, trip.status)
+    
+    print(f"\n📋 基本信息:")
+    info_rows = [
+        ["班次ID", trip.trip_id],
+        ["车牌号", trip.vehicle_plate],
+        ["司机ID", trip.driver_id],
+        ["路线", f"{trip.origin} -> {trip.destination}"],
+        ["订单数", f"{len(trip.orders)} 个"],
+        ["总载重", f"{trip.total_weight:.1f}t / {trip.total_volume:.1f}m³"],
+        ["预估里程", f"{trip.estimated_distance}km"],
+        ["预估时长", f"{trip.estimated_hours}h"],
+        ["当前状态", status],
+        ["累计晚点", f"{trip.delay_minutes} 分钟"],
+        ["是否改派", "是" if trip.reassigned else "否"],
+    ]
+    if trip.departure_time:
+        info_rows.append(["实际出发", trip.departure_time.strftime('%Y-%m-%d %H:%M:%S')])
+    if trip.arrival_time:
+        info_rows.append(["实际到达", trip.arrival_time.strftime('%Y-%m-%d %H:%M:%S')])
+    print_table(["项目", "值"], info_rows)
+    
+    if trip.orders and orders:
+        print(f"\n📦 配送订单:")
+        order_rows = []
+        for oid in trip.orders:
+            order = next((o for o in orders if o.order_id == oid), None)
+            if order:
+                order_rows.append([
+                    order.order_id,
+                    order.customer,
+                    order.cargo,
+                    f"{order.weight}t/{order.volume}m³",
+                    order.delivery_deadline.strftime('%Y-%m-%d %H:%M')
+                ])
+        print_table(["订单ID", "客户", "货物", "规格", "截止时间"], order_rows)
+    
+    print(f"\n📜 执行轨迹 ({len(trip.history)} 条记录):")
+    print(f"{'-'*70}")
+    
+    action_icons = {
+        "departure": "🚛",
+        "arrival": "🏁",
+        "complete": "✅",
+        "reassign": "🔄",
+        "delay": "⏰",
+        "plan": "📋"
+    }
+    
+    for i, entry in enumerate(trip.history, 1):
+        icon = action_icons.get(entry.action_type, "📌")
+        print(f"{i:2d}. {icon} {entry.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"    操作: {entry.action}")
+        if entry.reason:
+            print(f"    原因: {entry.reason}")
+        if entry.notes:
+            print(f"    备注: {entry.notes}")
+        print()
+    
+    if not trip.history:
+        print("   暂无执行记录")
+    
+    print(f"{'='*70}")
+
+
 def run_delay_command(
     action: str,
     trip_id: str | None = None,
@@ -315,6 +505,7 @@ def run_delay_command(
     new_driver: str | None = None,
     delay_minutes: int = 0,
     reason: str = "",
+    actual_time: str | None = None,
     vehicles_file: str = "data/vehicles.csv",
     drivers_file: str = "data/drivers.csv",
     orders_file: str = "data/orders.csv",
@@ -324,9 +515,30 @@ def run_delay_command(
     print("调度管理")
     print(f"{'='*60}")
     
-    if action == "depart" and trip_id:
+    parsed_time = _parse_time(actual_time)
+    if actual_time and parsed_time is None:
+        return
+    
+    if action == "history" and trip_id:
+        print(f"\n📜 班次执行流水账 - {trip_id}")
+        trip = get_trip_history(trip_id, output_dir)
+        if not trip:
+            print(f"❌ 未找到班次 {trip_id}")
+            return
+        
+        orders = load_orders(orders_file) if os.path.exists(orders_file) else []
+        if orders:
+            orders_status_file = os.path.join(output_dir, "orders_status.json")
+            orders = load_orders_status(orders_status_file, orders)
+        
+        _print_trip_history(trip, orders)
+        return
+    
+    elif action == "depart" and trip_id:
         print(f"\n🚛 标记出发 - 班次 {trip_id}")
-        trip = mark_departure(trip_id, None, output_dir)
+        if parsed_time:
+            print(f"   补录时间: {parsed_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        trip = mark_departure(trip_id, parsed_time, reason, output_dir)
         if trip:
             print(f"✅ 已标记出发！")
             print(f"   实际出发: {trip.departure_time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -335,7 +547,9 @@ def run_delay_command(
     
     elif action == "arrive" and trip_id:
         print(f"\n🏁 标记到达 - 班次 {trip_id}")
-        trip = mark_arrival(trip_id, None, output_dir)
+        if parsed_time:
+            print(f"   补录时间: {parsed_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        trip = mark_arrival(trip_id, parsed_time, reason, output_dir)
         if trip:
             print(f"✅ 已标记到达！")
             print(f"   实际到达: {trip.arrival_time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -344,7 +558,9 @@ def run_delay_command(
     
     elif action == "complete" and trip_id:
         print(f"\n✅ 标记完成 - 班次 {trip_id}")
-        trip = mark_complete(trip_id, None, output_dir)
+        if parsed_time:
+            print(f"   补录时间: {parsed_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        trip = mark_complete(trip_id, parsed_time, reason, output_dir)
         if trip:
             print(f"✅ 已标记完成！")
             if trip.departure_time:
@@ -356,7 +572,9 @@ def run_delay_command(
     
     elif action == "reassign" and trip_id:
         print(f"\n🔄 临时改派 - 班次 {trip_id}")
-        trip = reassign_trip(trip_id, new_vehicle, new_driver, reason, output_dir)
+        if parsed_time:
+            print(f"   补录时间: {parsed_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        trip = reassign_trip(trip_id, new_vehicle, new_driver, reason, parsed_time, output_dir)
         if trip:
             print(f"✅ 改派成功！")
             print(f"   车牌号: {trip.vehicle_plate}")
@@ -366,7 +584,9 @@ def run_delay_command(
     
     elif action == "delay" and trip_id and delay_minutes > 0:
         print(f"\n⏰ 记录晚点 - 班次 {trip_id}")
-        trip = record_delay(trip_id, delay_minutes, reason, output_dir)
+        if parsed_time:
+            print(f"   补录时间: {parsed_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        trip = record_delay(trip_id, delay_minutes, reason, parsed_time, output_dir)
         if trip:
             print(f"✅ 晚点已记录！")
             print(f"   累计晚点: {trip.delay_minutes} 分钟")

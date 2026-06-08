@@ -4,7 +4,7 @@ from typing import List, Dict, Tuple
 from ..models import Trip, Vehicle, Driver, Order, DailyReport
 from ..utils import (
     load_trips, load_vehicles, load_drivers, load_orders,
-    load_orders_status, print_table
+    load_orders_status, load_import_errors, print_table
 )
 
 
@@ -235,6 +235,18 @@ def generate_anomaly_list(
                 "severity": "中"
             })
     
+    import_errors = load_import_errors(output_dir)
+    for err in import_errors:
+        anomalies.append({
+            "type": f"导入失败({err['data_type']})",
+            "trip_id": "-",
+            "vehicle": "-",
+            "driver": "-",
+            "route": "-",
+            "detail": f"文件={os.path.basename(err['source_file'])} 行={err['row_number']} 字段={err['field']} 值='{err['value']}' 错误: {err['error']}",
+            "severity": "中"
+        })
+    
     report_lines = []
     report_lines.append("=" * 80)
     report_lines.append("异 常 清 单")
@@ -300,8 +312,7 @@ def generate_daily_report(
     
     today_trips = [
         t for t in trips 
-        if (t.departure_time and t.departure_time.date() == report_date)
-        or (t.status == "planned" and t.departure_time and t.departure_time.date() == report_date)
+        if t.departure_time and t.departure_time.date() == report_date
     ]
     
     report = DailyReport(report_date=report_date)
@@ -309,7 +320,7 @@ def generate_daily_report(
     
     completed_trips = [t for t in today_trips if t.status == "completed"]
     in_progress_trips = [t for t in today_trips if t.status == "in_progress"]
-    planned_trips = [t for t in today_trips if t.status in ["planned", "delayed"] and t.status != "in_progress" and t.status != "completed"]
+    planned_trips = [t for t in today_trips if t.status in ["planned", "delayed"]]
     delayed_trips = [t for t in today_trips if t.delay_minutes > 0]
     reassigned_trips = [t for t in today_trips if t.reassigned]
     
@@ -433,6 +444,177 @@ def generate_daily_report(
     return "\n".join(report_lines), report
 
 
+def generate_dashboard_report(
+    vehicles_file: str,
+    drivers_file: str,
+    orders_file: str,
+    output_dir: str = ".",
+    report_date: date | None = None
+) -> str:
+    from .delay import simulate_delay_impact
+    
+    report_date = report_date or date.today()
+    trips_file = os.path.join(output_dir, "trips.json")
+    trips = load_trips(trips_file)
+    vehicles = load_vehicles(vehicles_file)
+    drivers = load_drivers(drivers_file)
+    orders = load_orders(orders_file)
+    
+    orders_status_file = os.path.join(output_dir, "orders_status.json")
+    orders = load_orders_status(orders_status_file, orders)
+    
+    today_trips = [
+        t for t in trips 
+        if t.departure_time and t.departure_time.date() == report_date
+    ]
+    
+    lines = []
+    lines.append("=" * 100)
+    lines.append("调 度 看 板 汇 总")
+    lines.append("=" * 100)
+    lines.append(f"日期: {report_date.strftime('%Y年%m月%d日')}")
+    lines.append(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append("")
+    
+    total_completed = len([t for t in today_trips if t.status == "completed"])
+    total_in_progress = len([t for t in today_trips if t.status == "in_progress"])
+    total_planned = len([t for t in today_trips if t.status in ["planned", "delayed"]])
+    total_delayed = len([t for t in today_trips if t.delay_minutes > 0])
+    total_reassigned = len([t for t in today_trips if t.reassigned])
+    
+    lines.append("📊 今日整体进度")
+    lines.append(f"  总班次: {len(today_trips)} | 已完成: {total_completed} | 运输中: {total_in_progress} | 待出发: {total_planned} | 晚点: {total_delayed} | 改派: {total_reassigned}")
+    lines.append("")
+    
+    def _calc_trip_stats(trip_list: List[Trip]) -> dict:
+        return {
+            "total": len(trip_list),
+            "completed": len([t for t in trip_list if t.status == "completed"]),
+            "in_progress": len([t for t in trip_list if t.status == "in_progress"]),
+            "planned": len([t for t in trip_list if t.status in ["planned", "delayed"]]),
+            "delayed": len([t for t in trip_list if t.delay_minutes > 0]),
+            "reassigned": len([t for t in trip_list if t.reassigned]),
+            "overtime_risk": len([t for t in trip_list if t.delay_minutes > 60]),
+        }
+    
+    def _format_stats(stats: dict) -> str:
+        parts = []
+        if stats["completed"] > 0:
+            parts.append(f"✅{stats['completed']}")
+        if stats["in_progress"] > 0:
+            parts.append(f"🚚{stats['in_progress']}")
+        if stats["planned"] > 0:
+            parts.append(f"⏳{stats['planned']}")
+        if stats["delayed"] > 0:
+            parts.append(f"⏰{stats['delayed']}")
+        if stats["reassigned"] > 0:
+            parts.append(f"🔄{stats['reassigned']}")
+        if stats["overtime_risk"] > 0:
+            parts.append(f"⚠️超时{stats['overtime_risk']}")
+        return " ".join(parts) if parts else "-"
+    
+    lines.append("=" * 100)
+    lines.append("🚛 按车辆汇总")
+    lines.append("=" * 100)
+    lines.append(f"{'车牌':<12} {'车型':<10} {'班次':<6} {'进度状态':<30} {'风险/影响'}")
+    lines.append("-" * 100)
+    
+    vehicle_groups: Dict[str, List[Trip]] = {}
+    for trip in today_trips:
+        if trip.vehicle_plate not in vehicle_groups:
+            vehicle_groups[trip.vehicle_plate] = []
+        vehicle_groups[trip.vehicle_plate].append(trip)
+    
+    vehicle_map = {v.plate_number: v for v in vehicles}
+    for plate in sorted(vehicle_groups.keys()):
+        trip_list = vehicle_groups[plate]
+        stats = _calc_trip_stats(trip_list)
+        vehicle = vehicle_map.get(plate, None)
+        vtype = vehicle.vehicle_type if vehicle else "未知"
+        
+        risk_info = []
+        for trip in trip_list:
+            if trip.delay_minutes > 60:
+                impact = simulate_delay_impact(trip.trip_id, 0, drivers_file, vehicles_file, orders_file, output_dir)
+                if impact and impact.get("follow_on_trips"):
+                    risk_info.append(f"{trip.trip_id}影响后续{len(impact['follow_on_trips'])}班")
+                else:
+                    risk_info.append(f"{trip.trip_id}严重晚点")
+        
+        risk_str = ", ".join(risk_info) if risk_info else "-"
+        lines.append(f"{plate:<12} {vtype:<10} {stats['total']:<6} {_format_stats(stats):<30} {risk_str}")
+    
+    lines.append("")
+    lines.append("=" * 100)
+    lines.append("👤 按司机汇总")
+    lines.append("=" * 100)
+    lines.append(f"{'司机':<10} {'工时':<8} {'班次':<6} {'进度状态':<30} {'风险/影响'}")
+    lines.append("-" * 100)
+    
+    driver_groups: Dict[str, List[Trip]] = {}
+    for trip in today_trips:
+        if trip.driver_id not in driver_groups:
+            driver_groups[trip.driver_id] = []
+        driver_groups[trip.driver_id].append(trip)
+    
+    driver_map = {d.driver_id: d for d in drivers}
+    for did in sorted(driver_groups.keys()):
+        trip_list = driver_groups[did]
+        stats = _calc_trip_stats(trip_list)
+        driver = driver_map.get(did, None)
+        dname = driver.name if driver else did
+        
+        total_hours = sum(t.estimated_hours for t in trip_list)
+        max_hours = driver.max_daily_hours if driver else 8.0
+        hours_str = f"{total_hours:.1f}/{max_hours}h"
+        
+        risk_info = []
+        for trip in trip_list:
+            if trip.delay_minutes > 60:
+                impact = simulate_delay_impact(trip.trip_id, 0, drivers_file, vehicles_file, orders_file, output_dir)
+                if impact and impact.get("overtime_risk"):
+                    risk_info.append(f"{trip.trip_id}预计超时{impact['overtime_hours']:.1f}h")
+        
+        risk_str = ", ".join(risk_info) if risk_info else "-"
+        lines.append(f"{dname:<10} {hours_str:<8} {stats['total']:<6} {_format_stats(stats):<30} {risk_str}")
+    
+    lines.append("")
+    lines.append("=" * 100)
+    lines.append("🛣️  按路线汇总")
+    lines.append("=" * 100)
+    lines.append(f"{'路线':<25} {'班次':<6} {'订单':<6} {'进度状态':<30} {'风险/影响'}")
+    lines.append("-" * 100)
+    
+    route_groups: Dict[str, List[Trip]] = {}
+    for trip in today_trips:
+        key = trip.route_key
+        if key not in route_groups:
+            route_groups[key] = []
+        route_groups[key].append(trip)
+    
+    for route in sorted(route_groups.keys()):
+        trip_list = route_groups[route]
+        stats = _calc_trip_stats(trip_list)
+        order_count = sum(len(t.orders) for t in trip_list)
+        
+        risk_info = []
+        for trip in trip_list:
+            if trip.delay_minutes > 0:
+                impact = simulate_delay_impact(trip.trip_id, 0, drivers_file, vehicles_file, orders_file, output_dir)
+                if impact and impact.get("delivery_risks"):
+                    risk_info.append(f"{trip.trip_id} {len(impact['delivery_risks'])}单超时")
+        
+        risk_str = ", ".join(risk_info) if risk_info else "-"
+        lines.append(f"{route:<25} {stats['total']:<6} {order_count:<6} {_format_stats(stats):<30} {risk_str}")
+    
+    lines.append("")
+    lines.append("=" * 100)
+    lines.append("📌 图例说明: ✅已完成 🚚运输中 ⏳待出发 ⏰晚点 🔄改派 ⚠️超时风险")
+    lines.append("=" * 100)
+    
+    return "\n".join(lines)
+
+
 def run_report(
     report_type: str,
     vehicles_file: str,
@@ -483,13 +665,29 @@ def run_report(
                 f.write(daily_report)
             print(f"\n💾 日报已保存至: {filepath}")
     
+    elif report_type == "dashboard":
+        print(f"\n📊 生成调度看板汇总...")
+        dashboard = generate_dashboard_report(vehicles_file, drivers_file, orders_file, output_dir, report_date)
+        print()
+        print(dashboard)
+        
+        if save_to_file:
+            filename = f"dashboard_{report_date.strftime('%Y%m%d')}.txt"
+            filepath = os.path.join(output_dir, filename)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(dashboard)
+            print(f"\n💾 调度看板已保存至: {filepath}")
+    
     elif report_type == "all":
         print(f"\n📄 生成全套报表...")
         report_date = date.today()
         
         daily_report, _ = generate_daily_report(vehicles_file, drivers_file, orders_file, output_dir, report_date)
         anomaly_report, anomalies = generate_anomaly_list(vehicles_file, drivers_file, orders_file, output_dir, report_date)
+        dashboard = generate_dashboard_report(vehicles_file, drivers_file, orders_file, output_dir, report_date)
         
+        print()
+        print(dashboard)
         print()
         print(daily_report)
         print()
@@ -498,13 +696,17 @@ def run_report(
         if save_to_file:
             daily_file = f"daily_report_{report_date.strftime('%Y%m%d')}.txt"
             anomaly_file = f"anomaly_report_{report_date.strftime('%Y%m%d')}.txt"
+            dashboard_file = f"dashboard_{report_date.strftime('%Y%m%d')}.txt"
             
             with open(os.path.join(output_dir, daily_file), 'w', encoding='utf-8') as f:
                 f.write(daily_report)
             with open(os.path.join(output_dir, anomaly_file), 'w', encoding='utf-8') as f:
                 f.write(anomaly_report)
+            with open(os.path.join(output_dir, dashboard_file), 'w', encoding='utf-8') as f:
+                f.write(dashboard)
             
             print(f"\n💾 报表已保存:")
+            print(f"   - {dashboard_file}")
             print(f"   - {daily_file}")
             print(f"   - {anomaly_file}")
             
